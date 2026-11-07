@@ -9,9 +9,10 @@ GitHub Pages user site for **Aveepsit**, served on the custom domain
 |-------------|--------------------------------------------------------------------|
 | `README.md` | This file. Also the page GitHub Pages renders, since there is no `index.html`. |
 | `CNAME`     | Tells GitHub Pages to serve the site at `aveepsit.in`.             |
+| `_config.yml` | Jekyll config. Only excludes `infra/` from the published site.   |
+| `infra/dns.yaml` | CloudFormation template for the Route 53 DNS records.         |
 
-That's everything. There is no HTML, CSS, JavaScript, Jekyll config
-(`_config.yml`), theme, or build step.
+There is no HTML, CSS, JavaScript, theme, or build step.
 
 ## How it's served
 
@@ -22,6 +23,42 @@ That's everything. There is no HTML, CSS, JavaScript, Jekyll config
   to point at GitHub Pages (apex `A` records to GitHub's Pages IPs, or an
   `ALIAS`/`ANAME` record); the `CNAME` file alone does nothing if DNS is not
   set up.
+
+## DNS (Route 53 via CloudFormation)
+
+`infra/dns.yaml` manages the AWS side: a hosted zone for `aveepsit.in`, apex
+`A`/`AAAA` records for GitHub Pages, `www` as a `CNAME` to
+`aveepsit.github.io`, and an optional GitHub domain-verification `TXT` record.
+
+Deploy with a new hosted zone:
+
+```sh
+aws cloudformation deploy \
+  --stack-name aveepsit-dns \
+  --template-file infra/dns.yaml
+```
+
+Then copy the `NameServers` output to the domain's name-server settings at the
+registrar:
+
+```sh
+aws cloudformation describe-stacks --stack-name aveepsit-dns \
+  --query "Stacks[0].Outputs" --output table
+```
+
+If the domain was registered in Route 53, it already has a hosted zone. Pass
+its ID instead of creating a second one:
+
+```sh
+aws cloudformation deploy \
+  --stack-name aveepsit-dns \
+  --template-file infra/dns.yaml \
+  --parameter-overrides ExistingHostedZoneId=Z0123456789ABC
+```
+
+Add `GitHubVerificationCode=<value>` to `--parameter-overrides` once GitHub
+gives you the verification code. Deleting the stack keeps the hosted zone
+(`DeletionPolicy: Retain`), so the registrar's name servers stay valid.
 
 ## History
 

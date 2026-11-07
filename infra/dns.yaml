@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Route 53 DNS for the GitHub Pages site. Points the apex domain and www at
+  GitHub Pages, and optionally adds the GitHub domain-verification TXT record.
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: aveepsit.in
+    Description: Apex domain served by GitHub Pages (must match the CNAME file).
+
+  GitHubUser:
+    Type: String
+    Default: aveepsit
+    Description: GitHub user that owns the <user>.github.io repository.
+
+  ExistingHostedZoneId:
+    Type: String
+    Default: ""
+    Description: >-
+      Leave empty to create a new hosted zone. Set it to the ID of a zone that
+      already exists (for example the one Route 53 creates when you register a
+      domain there) to add the records to that zone instead.
+
+  GitHubVerificationCode:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional. The value GitHub shows under Settings > Pages > Add a domain
+      for the _github-pages-challenge TXT record. Leave empty to skip it.
+
+Conditions:
+  CreateZone: !Equals [!Ref ExistingHostedZoneId, ""]
+  AddVerification: !Not [!Equals [!Ref GitHubVerificationCode, ""]]
+
+Resources:
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    Condition: CreateZone
+    # Deleting the stack must not delete the zone: the registrar's NS records
+    # point at it, and recreating it assigns different name servers.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Ref DomainName
+      HostedZoneConfig:
+        Comment: !Sub "GitHub Pages site for ${GitHubUser}.github.io"
+
+  # GitHub Pages apex addresses:
+  # https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site
+  ApexA:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !If [CreateZone, !Ref HostedZone, !Ref ExistingHostedZoneId]
+      Name: !Ref DomainName
+      Type: A
+      TTL: "3600"
+      ResourceRecords:
+        - 185.199.108.153
+        - 185.199.109.153
+        - 185.199.110.153
+        - 185.199.111.153
+
+  ApexAAAA:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !If [CreateZone, !Ref HostedZone, !Ref ExistingHostedZoneId]
+      Name: !Ref DomainName
+      Type: AAAA
+      TTL: "3600"
+      ResourceRecords:
+        - 2606:50c0:8000::153
+        - 2606:50c0:8001::153
+        - 2606:50c0:8002::153
+        - 2606:50c0:8003::153
+
+  Www:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !If [CreateZone, !Ref HostedZone, !Ref ExistingHostedZoneId]
+      Name: !Sub "www.${DomainName}"
+      Type: CNAME
+      TTL: "3600"
+      ResourceRecords:
+        - !Sub "${GitHubUser}.github.io"
+
+  GitHubVerification:
+    Type: AWS::Route53::RecordSet
+    Condition: AddVerification
+    Properties:
+      HostedZoneId: !If [CreateZone, !Ref HostedZone, !Ref ExistingHostedZoneId]
+      Name: !Sub "_github-pages-challenge-${GitHubUser}.${DomainName}"
+      Type: TXT
+      TTL: "3600"
+      ResourceRecords:
+        - !Sub '"${GitHubVerificationCode}"'
+
+Outputs:
+  HostedZoneId:
+    Value: !If [CreateZone, !Ref HostedZone, !Ref ExistingHostedZoneId]
+  NameServers:
+    Condition: CreateZone
+    Description: Set these as the domain's name servers at your registrar.
+    Value: !Join [", ", !GetAtt HostedZone.NameServers]

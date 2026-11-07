@@ -1,0 +1,3 @@
+# Keep infrastructure files off the published site.
+exclude:
+  - infra
